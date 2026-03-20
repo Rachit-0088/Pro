@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Manage Students – AI Exam Portal</title>
+  <link rel="stylesheet" href="/assets/css/style.css" />
+</head>
+<body>
+  <nav class="navbar">
+    <span class="brand">🎓 AI Exam Portal</span>
+    <div class="nav-links">
+      <a href="/teacher/dashboard.html">Dashboard</a>
+      <a href="/teacher/exams.html">Exams</a>
+      <a href="/teacher/students.html" class="active">Students</a>
+      <a href="/teacher/results.html">Results</a>
+      <a href="/teacher/monitor.html">Monitor</a>
+    </div>
+    <div class="flex gap-1" style="align-items:center">
+      <span class="user-info" id="nav-user"></span>
+      <button class="btn btn-outline btn-sm" onclick="logout()" style="color:#fff;border-color:rgba(255,255,255,.4)">Logout</button>
+    </div>
+  </nav>
+  <div class="dashboard-layout">
+    <nav class="sidebar">
+      <a href="/teacher/dashboard.html"><span class="icon">📊</span> Dashboard</a>
+      <a href="/teacher/exams.html"><span class="icon">📝</span> Manage Exams</a>
+      <a href="/teacher/students.html" class="active"><span class="icon">👥</span> Students</a>
+      <a href="/teacher/results.html"><span class="icon">📈</span> Results</a>
+      <a href="/teacher/monitor.html"><span class="icon">👁</span> Monitor</a>
+      <a href="#" onclick="logout()"><span class="icon">🚪</span> Logout</a>
+    </nav>
+    <main class="main-content">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem">
+        <h2>Student Management</h2>
+        <input type="text" id="search" class="form-control" style="max-width:220px" placeholder="Search…" oninput="filterTable()" />
+      </div>
+      <div id="alert-box"></div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>#</th><th>Name</th><th>Email</th><th>Registered</th><th>Status</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="students-table"><tr><td colspan="6" class="text-muted text-center">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+  <script src="/assets/js/api.js"></script>
+  <script>
+    const user = requireAuth('teacher');
+    if (user) { setNavUser(); loadStudents(); }
+    let allStudents = [];
+
+    async function loadStudents() {
+      try {
+        const data = await API.get('/users');
+        allStudents = (data.users || []).filter(u => u.role === 'student');
+        renderTable(allStudents);
+      } catch (err) { showAlert('alert-box', 'danger', err.message); }
+    }
+
+    function renderTable(students) {
+      const tbody = document.getElementById('students-table');
+      if (students.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-muted text-center">No students found.</td></tr>'; return;
+      }
+      tbody.innerHTML = students.map((s, i) => `
+        <tr>
+          <td>${i + 1}</td>
+          <td>${escHtml(s.name)}</td>
+          <td>${escHtml(s.email)}</td>
+          <td>${formatDate(s.created_at)}</td>
+          <td><span class="badge ${s.is_active ? 'badge-success' : 'badge-danger'}">${s.is_active ? 'Active' : 'Inactive'}</span></td>
+          <td>
+            ${user.role === 'admin' ? `<button class="btn btn-warning btn-sm" onclick="toggleUser(${s.id})">${s.is_active ? 'Disable' : 'Enable'}</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteUser(${s.id})">Delete</button>` : '–'}
+          </td>
+        </tr>`).join('');
+    }
+
+    function filterTable() {
+      const q = document.getElementById('search').value.toLowerCase();
+      renderTable(allStudents.filter(s => s.name.toLowerCase().includes(q) || s.email.toLowerCase().includes(q)));
+    }
+
+    async function toggleUser(id) {
+      try { await API.put(`/users/${id}/toggle`, {}); loadStudents(); }
+      catch (err) { showAlert('alert-box', 'danger', err.message); }
+    }
+
+    async function deleteUser(id) {
+      if (!confirm('Delete this student and all their data?')) return;
+      try { await API.delete(`/users/${id}`); showAlert('alert-box', 'success', 'Student deleted.'); loadStudents(); }
+      catch (err) { showAlert('alert-box', 'danger', err.message); }
+    }
+  </script>
+</body>
+</html>

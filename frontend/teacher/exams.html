@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Manage Exams – AI Exam Portal</title>
+  <link rel="stylesheet" href="/assets/css/style.css" />
+</head>
+<body>
+  <nav class="navbar">
+    <span class="brand">🎓 AI Exam Portal</span>
+    <div class="nav-links">
+      <a href="/teacher/dashboard.html">Dashboard</a>
+      <a href="/teacher/exams.html" class="active">Exams</a>
+      <a href="/teacher/students.html">Students</a>
+      <a href="/teacher/results.html">Results</a>
+      <a href="/teacher/monitor.html">Monitor</a>
+    </div>
+    <div class="flex gap-1" style="align-items:center">
+      <span class="user-info" id="nav-user"></span>
+      <button class="btn btn-outline btn-sm" onclick="logout()" style="color:#fff;border-color:rgba(255,255,255,.4)">Logout</button>
+    </div>
+  </nav>
+
+  <div class="dashboard-layout">
+    <nav class="sidebar">
+      <a href="/teacher/dashboard.html"><span class="icon">📊</span> Dashboard</a>
+      <a href="/teacher/exams.html" class="active"><span class="icon">📝</span> Manage Exams</a>
+      <a href="/teacher/students.html"><span class="icon">👥</span> Students</a>
+      <a href="/teacher/results.html"><span class="icon">📈</span> Results</a>
+      <a href="/teacher/monitor.html"><span class="icon">👁</span> Monitor</a>
+      <a href="#" onclick="logout()"><span class="icon">🚪</span> Logout</a>
+    </nav>
+
+    <main class="main-content">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem">
+        <h2>Manage Exams</h2>
+        <button class="btn btn-primary" onclick="openModal('exam-modal')">+ New Exam</button>
+      </div>
+
+      <div id="alert-box"></div>
+
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Title</th><th>Subject</th><th>Scheduled</th><th>Duration</th><th>Qs</th><th>Total Marks</th><th>Status</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="exams-table"><tr><td colspan="8" class="text-muted text-center">Loading…</td></tr></tbody>
+          </table>
+        </div>
+        <div id="exams-empty" class="text-muted text-center mt-2 hidden">No exams yet.</div>
+      </div>
+
+      <!-- Questions section (shown when exam is selected) -->
+      <div id="questions-section" class="hidden">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+          <h3>Questions for: <span id="current-exam-title"></span></h3>
+          <div class="flex gap-1">
+            <button class="btn btn-outline btn-sm" onclick="closeQuestions()">← Back to Exams</button>
+            <button class="btn btn-primary btn-sm" onclick="openModal('question-modal')">+ Add Question</button>
+          </div>
+        </div>
+        <div id="q-alert"></div>
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>#</th><th>Question</th><th>Correct Ans</th><th>Marks</th><th>Actions</th></tr>
+              </thead>
+              <tbody id="questions-table"><tr><td colspan="5" class="text-muted text-center">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Exam Modal -->
+  <div class="modal-overlay" id="exam-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="exam-modal-title">Create Exam</h3>
+        <button class="modal-close" onclick="closeModal('exam-modal')">✕</button>
+      </div>
+      <div id="exam-modal-alert"></div>
+      <form id="exam-form">
+        <input type="hidden" id="exam-id" />
+        <div class="form-group">
+          <label>Exam Title *</label>
+          <input type="text" id="exam-title" class="form-control" required placeholder="e.g. Mathematics Midterm" />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Subject</label>
+            <input type="text" id="exam-subject" class="form-control" placeholder="e.g. Mathematics" />
+          </div>
+          <div class="form-group">
+            <label>Duration (minutes) *</label>
+            <input type="number" id="exam-duration" class="form-control" required min="1" value="30" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Scheduled At *</label>
+            <input type="datetime-local" id="exam-scheduled" class="form-control" required />
+          </div>
+          <div class="form-group">
+            <label>Pass Marks</label>
+            <input type="number" id="exam-pass" class="form-control" min="0" value="0" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Description</label>
+          <textarea id="exam-desc" class="form-control" rows="3" placeholder="Optional description"></textarea>
+        </div>
+        <div class="form-group">
+          <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer">
+            <input type="checkbox" id="exam-randomize" checked /> Randomise question order
+          </label>
+        </div>
+        <div class="form-group">
+          <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer">
+            <input type="checkbox" id="exam-active" checked /> Exam is active (visible to students)
+          </label>
+        </div>
+      </form>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('exam-modal')">Cancel</button>
+        <button class="btn btn-primary" onclick="saveExam()">Save Exam</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Question Modal -->
+  <div class="modal-overlay" id="question-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="q-modal-title">Add Question</h3>
+        <button class="modal-close" onclick="closeModal('question-modal')">✕</button>
+      </div>
+      <div id="q-modal-alert"></div>
+      <form id="question-form">
+        <input type="hidden" id="q-id" />
+        <div class="form-group">
+          <label>Question *</label>
+          <textarea id="q-text" class="form-control" rows="3" required placeholder="Enter your question here"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Option A *</label>
+          <input type="text" id="q-a" class="form-control" required />
+        </div>
+        <div class="form-group">
+          <label>Option B *</label>
+          <input type="text" id="q-b" class="form-control" required />
+        </div>
+        <div class="form-group">
+          <label>Option C *</label>
+          <input type="text" id="q-c" class="form-control" required />
+        </div>
+        <div class="form-group">
+          <label>Option D *</label>
+          <input type="text" id="q-d" class="form-control" required />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Correct Answer *</label>
+            <select id="q-correct" class="form-control">
+              <option value="A">A</option><option value="B">B</option>
+              <option value="C">C</option><option value="D">D</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Marks</label>
+            <input type="number" id="q-marks" class="form-control" min="1" value="1" />
+          </div>
+        </div>
+      </form>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('question-modal')">Cancel</button>
+        <button class="btn btn-primary" onclick="saveQuestion()">Save Question</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/assets/js/api.js"></script>
+  <script>
+    const user = requireAuth('teacher');
+    if (user) { setNavUser(); loadExams(); }
+
+    let currentExamId = null;
+
+    // Pre-select exam from query param
+    const urlParams = new URLSearchParams(window.location.search);
+    const preselect = urlParams.get('id');
+
+    async function loadExams() {
+      try {
+        const data  = await API.get('/exams');
+        const exams = data.exams || [];
+        const tbody = document.getElementById('exams-table');
+        const empty = document.getElementById('exams-empty');
+
+        if (exams.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="8" class="text-muted text-center">No exams yet.</td></tr>';
+          empty.classList.remove('hidden');
+          return;
+        }
+        empty.classList.add('hidden');
+        tbody.innerHTML = exams.map(e => `
+          <tr>
+            <td><strong>${escHtml(e.title)}</strong></td>
+            <td>${escHtml(e.subject || '–')}</td>
+            <td>${formatDate(e.scheduled_at)}</td>
+            <td>${e.duration_mins} min</td>
+            <td>${e.question_count || 0}</td>
+            <td>${e.total_marks || 0}</td>
+            <td><span class="badge ${e.is_active ? 'badge-success' : 'badge-muted'}">${e.is_active ? 'Active' : 'Inactive'}</span></td>
+            <td>
+              <button class="btn btn-outline btn-sm" onclick="editExam(${e.id})">Edit</button>
+              <button class="btn btn-secondary btn-sm" onclick="manageQuestions(${e.id},'${escHtml(e.title)}')">Questions</button>
+              <button class="btn btn-danger btn-sm" onclick="deleteExam(${e.id})">Del</button>
+            </td>
+          </tr>
+        `).join('');
+
+        if (preselect) {
+          const found = exams.find(e => e.id == preselect);
+          if (found) manageQuestions(found.id, found.title);
+        }
+      } catch (err) {
+        showAlert('alert-box', 'danger', err.message);
+      }
+    }
+
+    async function saveExam() {
+      const id        = document.getElementById('exam-id').value;
+      const title     = document.getElementById('exam-title').value.trim();
+      const subject   = document.getElementById('exam-subject').value.trim();
+      const duration  = document.getElementById('exam-duration').value;
+      const scheduled = document.getElementById('exam-scheduled').value;
+      const pass      = document.getElementById('exam-pass').value;
+      const desc      = document.getElementById('exam-desc').value.trim();
+      const randomize = document.getElementById('exam-randomize').checked;
+      const is_active = document.getElementById('exam-active').checked;
+
+      if (!title || !scheduled || !duration) {
+        showAlert('exam-modal-alert', 'danger', 'Title, scheduled date, and duration are required.'); return;
+      }
+
+      const body = { title, subject, description: desc, scheduled_at: scheduled.replace('T', ' ') + ':00',
+                     duration_mins: duration, pass_marks: pass, randomize, is_active };
+      try {
+        if (id) await API.put(`/exams/${id}`, body);
+        else    await API.post('/exams', body);
+        closeModal('exam-modal');
+        showAlert('alert-box', 'success', id ? 'Exam updated.' : 'Exam created.');
+        loadExams();
+      } catch (err) {
+        showAlert('exam-modal-alert', 'danger', err.message);
+      }
+    }
+
+    async function editExam(id) {
+      try {
+        const data = await API.get(`/exams/${id}`);
+        const e    = data.exam;
+        document.getElementById('exam-id').value      = e.id;
+        document.getElementById('exam-title').value   = e.title;
+        document.getElementById('exam-subject').value = e.subject || '';
+        document.getElementById('exam-duration').value = e.duration_mins;
+        document.getElementById('exam-scheduled').value = e.scheduled_at ? e.scheduled_at.slice(0,16) : '';
+        document.getElementById('exam-pass').value    = e.pass_marks;
+        document.getElementById('exam-desc').value    = e.description || '';
+        document.getElementById('exam-randomize').checked = !!e.randomize;
+        document.getElementById('exam-active').checked    = !!e.is_active;
+        document.getElementById('exam-modal-title').textContent = 'Edit Exam';
+        openModal('exam-modal');
+      } catch (err) { showAlert('alert-box', 'danger', err.message); }
+    }
+
+    async function deleteExam(id) {
+      if (!confirm('Delete this exam and all its questions/results?')) return;
+      try {
+        await API.delete(`/exams/${id}`);
+        showAlert('alert-box', 'success', 'Exam deleted.');
+        loadExams();
+      } catch (err) { showAlert('alert-box', 'danger', err.message); }
+    }
+
+    async function manageQuestions(examId, title) {
+      currentExamId = examId;
+      document.getElementById('current-exam-title').textContent = title;
+      document.getElementById('questions-section').classList.remove('hidden');
+      document.querySelector('.card').style.display = 'none';
+      loadQuestions();
+    }
+
+    function closeQuestions() {
+      currentExamId = null;
+      document.getElementById('questions-section').classList.add('hidden');
+      document.querySelector('.card').style.display = '';
+    }
+
+    async function loadQuestions() {
+      try {
+        const data = await API.get(`/questions/${currentExamId}`);
+        const qs   = data.questions || [];
+        const tbody = document.getElementById('questions-table');
+        if (qs.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5" class="text-muted text-center">No questions yet.</td></tr>'; return;
+        }
+        tbody.innerHTML = qs.map((q, i) => `
+          <tr>
+            <td>${i + 1}</td>
+            <td>${escHtml(q.question)}</td>
+            <td><span class="badge badge-info">${q.correct_ans}</span></td>
+            <td>${q.marks}</td>
+            <td>
+              <button class="btn btn-outline btn-sm" onclick="editQuestion(${q.id})">Edit</button>
+              <button class="btn btn-danger btn-sm" onclick="deleteQuestion(${q.id})">Del</button>
+            </td>
+          </tr>
+        `).join('');
+      } catch (err) { showAlert('q-alert', 'danger', err.message); }
+    }
+
+    async function saveQuestion() {
+      const id      = document.getElementById('q-id').value;
+      const question = document.getElementById('q-text').value.trim();
+      const option_a = document.getElementById('q-a').value.trim();
+      const option_b = document.getElementById('q-b').value.trim();
+      const option_c = document.getElementById('q-c').value.trim();
+      const option_d = document.getElementById('q-d').value.trim();
+      const correct_ans = document.getElementById('q-correct').value;
+      const marks    = document.getElementById('q-marks').value;
+
+      if (!question || !option_a || !option_b || !option_c || !option_d) {
+        showAlert('q-modal-alert', 'danger', 'All fields are required.'); return;
+      }
+      const body = { question, option_a, option_b, option_c, option_d, correct_ans, marks };
+      try {
+        if (id) await API.put(`/questions/${currentExamId}/${id}`, body);
+        else    await API.post(`/questions/${currentExamId}`, body);
+        closeModal('question-modal');
+        showAlert('q-alert', 'success', id ? 'Question updated.' : 'Question added.');
+        loadQuestions();
+      } catch (err) { showAlert('q-modal-alert', 'danger', err.message); }
+    }
+
+    async function editQuestion(qId) {
+      try {
+        const data = await API.get(`/questions/${currentExamId}`);
+        const q    = (data.questions || []).find(x => x.id === qId);
+        if (!q) return;
+        document.getElementById('q-id').value      = q.id;
+        document.getElementById('q-text').value    = q.question;
+        document.getElementById('q-a').value       = q.option_a;
+        document.getElementById('q-b').value       = q.option_b;
+        document.getElementById('q-c').value       = q.option_c;
+        document.getElementById('q-d').value       = q.option_d;
+        document.getElementById('q-correct').value = q.correct_ans;
+        document.getElementById('q-marks').value   = q.marks;
+        document.getElementById('q-modal-title').textContent = 'Edit Question';
+        openModal('question-modal');
+      } catch (err) { showAlert('q-alert', 'danger', err.message); }
+    }
+
+    async function deleteQuestion(qId) {
+      if (!confirm('Delete this question?')) return;
+      try {
+        await API.delete(`/questions/${currentExamId}/${qId}`);
+        showAlert('q-alert', 'success', 'Question deleted.');
+        loadQuestions();
+      } catch (err) { showAlert('q-alert', 'danger', err.message); }
+    }
+
+    // Reset exam modal on open
+    document.getElementById('exam-modal').addEventListener('click', e => {
+      if (e.target === e.currentTarget) closeModal('exam-modal');
+    });
+    document.getElementById('question-modal').addEventListener('click', e => {
+      if (e.target === e.currentTarget) closeModal('question-modal');
+    });
+    document.getElementById('exam-modal').addEventListener('transitionend', () => {
+      if (!document.getElementById('exam-modal').classList.contains('open')) {
+        document.getElementById('exam-id').value = '';
+        document.getElementById('exam-form').reset();
+        document.getElementById('exam-modal-title').textContent = 'Create Exam';
+        document.getElementById('exam-randomize').checked = true;
+        document.getElementById('exam-active').checked    = true;
+      }
+    });
+    document.getElementById('question-modal').addEventListener('transitionend', () => {
+      if (!document.getElementById('question-modal').classList.contains('open')) {
+        document.getElementById('q-id').value = '';
+        document.getElementById('question-form').reset();
+        document.getElementById('q-modal-title').textContent = 'Add Question';
+        document.getElementById('q-marks').value = 1;
+      }
+    });
+  </script>
+</body>
+</html>

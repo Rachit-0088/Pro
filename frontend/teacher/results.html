@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Results – AI Exam Portal</title>
+  <link rel="stylesheet" href="/assets/css/style.css" />
+</head>
+<body>
+  <nav class="navbar">
+    <span class="brand">🎓 AI Exam Portal</span>
+    <div class="nav-links">
+      <a href="/teacher/dashboard.html">Dashboard</a>
+      <a href="/teacher/exams.html">Exams</a>
+      <a href="/teacher/students.html">Students</a>
+      <a href="/teacher/results.html" class="active">Results</a>
+      <a href="/teacher/monitor.html">Monitor</a>
+    </div>
+    <div class="flex gap-1" style="align-items:center">
+      <span class="user-info" id="nav-user"></span>
+      <button class="btn btn-outline btn-sm" onclick="logout()" style="color:#fff;border-color:rgba(255,255,255,.4)">Logout</button>
+    </div>
+  </nav>
+  <div class="dashboard-layout">
+    <nav class="sidebar">
+      <a href="/teacher/dashboard.html"><span class="icon">📊</span> Dashboard</a>
+      <a href="/teacher/exams.html"><span class="icon">📝</span> Manage Exams</a>
+      <a href="/teacher/students.html"><span class="icon">👥</span> Students</a>
+      <a href="/teacher/results.html" class="active"><span class="icon">📈</span> Results</a>
+      <a href="/teacher/monitor.html"><span class="icon">👁</span> Monitor</a>
+      <a href="#" onclick="logout()"><span class="icon">🚪</span> Logout</a>
+    </nav>
+    <main class="main-content">
+      <h2 style="margin-bottom:1rem">Exam Results</h2>
+      <div id="alert-box"></div>
+      <div class="card" style="margin-bottom:1rem">
+        <div class="form-group" style="margin:0">
+          <label>Select Exam</label>
+          <select id="exam-select" class="form-control" onchange="loadResults()">
+            <option value="">– Choose an exam –</option>
+          </select>
+        </div>
+      </div>
+      <div id="results-section" class="hidden">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+          <div id="results-summary"></div>
+          <button class="btn btn-success btn-sm" onclick="exportCSV()">⬇ Export CSV</button>
+        </div>
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>#</th><th>Student</th><th>Email</th><th>Score</th><th>%</th><th>Status</th><th>Time Taken</th><th>Submitted</th></tr>
+              </thead>
+              <tbody id="results-table"></tbody>
+            </table>
+          </div>
+          <div id="results-empty" class="text-muted text-center mt-2 hidden">No submissions yet.</div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <script src="/assets/js/api.js"></script>
+  <script>
+    const user = requireAuth('teacher');
+    if (user) { setNavUser(); loadExams(); }
+
+    let currentResults = [];
+    let currentExamTitle = '';
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const preExam   = urlParams.get('exam');
+
+    async function loadExams() {
+      try {
+        const data  = await API.get('/exams');
+        const sel   = document.getElementById('exam-select');
+        const exams = data.exams || [];
+        exams.forEach(e => {
+          const opt = document.createElement('option');
+          opt.value = e.id;
+          opt.textContent = e.title;
+          sel.appendChild(opt);
+        });
+        if (preExam) { sel.value = preExam; loadResults(); }
+      } catch (err) { showAlert('alert-box', 'danger', err.message); }
+    }
+
+    async function loadResults() {
+      const examId = document.getElementById('exam-select').value;
+      if (!examId) { document.getElementById('results-section').classList.add('hidden'); return; }
+
+      const sel = document.getElementById('exam-select');
+      currentExamTitle = sel.options[sel.selectedIndex].text;
+
+      try {
+        const data    = await API.get(`/results/exam/${examId}`);
+        currentResults = data.results || [];
+        document.getElementById('results-section').classList.remove('hidden');
+
+        const total  = currentResults.length;
+        const passed = currentResults.filter(r => r.passed).length;
+        const avgPct = total ? (currentResults.reduce((s, r) => s + parseFloat(r.percentage), 0) / total).toFixed(1) : 0;
+
+        document.getElementById('results-summary').innerHTML = `
+          <div class="flex gap-2" style="flex-wrap:wrap">
+            <span class="badge badge-info">Total: ${total}</span>
+            <span class="badge badge-success">Passed: ${passed}</span>
+            <span class="badge badge-danger">Failed: ${total - passed}</span>
+            <span class="badge badge-muted">Avg: ${avgPct}%</span>
+          </div>`;
+
+        const tbody = document.getElementById('results-table');
+        const empty = document.getElementById('results-empty');
+
+        if (currentResults.length === 0) {
+          tbody.innerHTML = ''; empty.classList.remove('hidden'); return;
+        }
+        empty.classList.add('hidden');
+        tbody.innerHTML = currentResults.map((r, i) => `
+          <tr>
+            <td>${i + 1}</td>
+            <td>${escHtml(r.student_name)}</td>
+            <td>${escHtml(r.student_email)}</td>
+            <td>${r.score} / ${r.total_marks}</td>
+            <td>${r.percentage}%</td>
+            <td><span class="badge ${r.passed ? 'badge-success' : 'badge-danger'}">${r.passed ? 'Pass' : 'Fail'}</span></td>
+            <td>${formatDuration(r.time_taken_secs)}</td>
+            <td>${formatDate(r.submitted_at)}</td>
+          </tr>`).join('');
+      } catch (err) { showAlert('alert-box', 'danger', err.message); }
+    }
+
+    async function exportCSV() {
+      const examId = document.getElementById('exam-select').value;
+      if (!examId) return;
+      window.open(`/api/results/export/${examId}`, '_blank');
+    }
+  </script>
+</body>
+</html>

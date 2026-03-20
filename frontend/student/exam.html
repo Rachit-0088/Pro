@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Exam – AI Exam Portal</title>
+  <link rel="stylesheet" href="/assets/css/style.css" />
+  <style>
+    body { background: #f1f5f9; }
+    .exam-topbar {
+      position: sticky; top: 0; z-index: 200;
+      background: #fff; border-bottom: 1px solid var(--border);
+      padding: .75rem 1.25rem;
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .5rem;
+      box-shadow: var(--shadow);
+    }
+    .exam-topbar .exam-title { font-weight: 600; font-size: 1rem; }
+    .nav-dots { display: flex; flex-wrap: wrap; gap: .4rem; margin: 1rem 0; }
+    .nav-dot {
+      width: 34px; height: 34px; border-radius: 50%; border: 2px solid var(--border);
+      background: #fff; cursor: pointer; font-size: .8rem; font-weight: 600;
+      display: flex; align-items: center; justify-content: center; transition: all .2s;
+    }
+    .nav-dot.answered { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .nav-dot.current  { border-color: var(--secondary); }
+    .submit-section { background: #fff; border-radius: var(--radius); padding: 1.25rem; box-shadow: var(--shadow); text-align: center; }
+  </style>
+</head>
+<body>
+  <!-- Monitoring banner -->
+  <div class="monitor-bar" id="monitor-bar">⚠ Warning: Tab switching detected! This has been logged.</div>
+
+  <!-- Webcam preview -->
+  <div class="webcam-wrap" id="webcam-wrap" style="display:none">
+    <video id="webcam-video" autoplay muted playsinline></video>
+    <div class="webcam-label">📷 Proctoring Active</div>
+  </div>
+
+  <!-- Top bar -->
+  <div class="exam-topbar">
+    <div>
+      <div class="exam-title" id="exam-title">Loading exam…</div>
+      <div class="text-muted" style="font-size:.8rem" id="exam-meta"></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:.75rem">
+      <div>
+        <div style="font-size:.7rem;color:var(--muted);text-align:center">Time Left</div>
+        <div class="exam-timer" id="exam-timer">--:--</div>
+      </div>
+      <button class="btn btn-danger" onclick="confirmSubmit()">Submit Exam</button>
+    </div>
+  </div>
+
+  <div class="container" style="max-width:860px;padding:1.5rem 1.25rem">
+    <div id="alert-box"></div>
+
+    <!-- Progress -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">
+      <span class="text-muted" style="font-size:.85rem">Progress: <span id="answered-count">0</span> / <span id="total-count">0</span> answered</span>
+      <span class="text-muted" style="font-size:.85rem" id="current-indicator"></span>
+    </div>
+    <div class="progress-bar-wrap">
+      <div class="progress-bar" id="progress-bar" style="width:0%"></div>
+    </div>
+
+    <!-- Question navigation dots -->
+    <div class="nav-dots" id="nav-dots"></div>
+
+    <!-- Question display -->
+    <div id="question-container"></div>
+
+    <!-- Navigation -->
+    <div class="flex gap-1" style="justify-content:space-between;margin:1rem 0">
+      <button class="btn btn-outline" id="btn-prev" onclick="navigate(-1)" disabled>← Previous</button>
+      <button class="btn btn-outline" id="btn-next" onclick="navigate(1)">Next →</button>
+    </div>
+
+    <!-- Submit section -->
+    <div class="submit-section">
+      <p class="text-muted mb-1">Review all questions before submitting.</p>
+      <button class="btn btn-danger btn-lg" onclick="confirmSubmit()">🏁 Submit Exam</button>
+    </div>
+  </div>
+
+  <script src="/assets/js/api.js"></script>
+  <script>
+    // ─── Bootstrap ─────────────────────────────────────────────────────────────
+    const user    = requireAuth('student');
+    const params  = new URLSearchParams(window.location.search);
+    const examId  = params.get('id');
+
+    if (!user || !examId) {
+      alert('Invalid exam session.'); window.location.href = '/student/dashboard.html';
+    }
+
+    // ─── State ─────────────────────────────────────────────────────────────────
+    let questions    = [];
+    let answers      = {};
+    let currentIndex = 0;
+    let timerInterval = null;
+    let timeLeft     = 0;
+    let examStartTime = null;
+    let tabSwitches  = 0;
+    let submitted    = false;
+    let examData     = null;
+
+    // ─── Init ───────────────────────────────────────────────────────────────────
+    (async () => {
+      try {
+        // Load exam info
+        const eData = await API.get(`/exams/${examId}`);
+        examData = eData.exam;
+
+        document.getElementById('exam-title').textContent = examData.title;
+        document.getElementById('exam-meta').textContent  = `${examData.subject || ''} · ${examData.duration_mins} min · ${examData.total_marks} marks`;
+
+        // Load questions (server sends shuffled for students)
+        const qData = await API.get(`/questions/${examId}`);
+        questions   = qData.questions || [];
+
+        if (questions.length === 0) {
+          showAlert('alert-box', 'warning', 'This exam has no questions.');
+          document.getElementById('question-container').innerHTML = '<p class="text-muted">No questions available.</p>';
+          return;
+        }
+
+        // Set timer
+        timeLeft      = examData.duration_mins * 60;
+        examStartTime = Date.now();
+
+        initNavDots();
+        renderQuestion(0);
+        startTimer();
+        initWebcam();
+        initMonitoring();
+
+        document.getElementById('total-count').textContent = questions.length;
+
+      } catch (err) {
+        showAlert('alert-box', 'danger', err.message);
+      }
+    })();
+
+    // ─── Timer ──────────────────────────────────────────────────────────────────
+    function startTimer() {
+      updateTimerDisplay();
+      timerInterval = setInterval(() => {
+        timeLeft--;
+        updateTimerDisplay();
+        if (timeLeft <= 0) {
+          clearInterval(timerInterval);
+          autoSubmit();
+        }
+      }, 1000);
+    }
+
+    function updateTimerDisplay() {
+      const m   = Math.floor(timeLeft / 60);
+      const s   = timeLeft % 60;
+      const el  = document.getElementById('exam-timer');
+      el.textContent = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+      el.className = 'exam-timer';
+      if (timeLeft <= 60)       el.classList.add('danger');
+      else if (timeLeft <= 300) el.classList.add('warning');
+    }
+
+    async function autoSubmit() {
+      if (submitted) return;
+      showAlert('alert-box', 'warning', '⏰ Time is up! Auto-submitting…');
+      await submitExam();
+    }
+
+    // ─── Rendering ──────────────────────────────────────────────────────────────
+    function initNavDots() {
+      const container = document.getElementById('nav-dots');
+      container.innerHTML = questions.map((_, i) =>
+        `<div class="nav-dot" id="dot-${i}" onclick="renderQuestion(${i})">${i + 1}</div>`
+      ).join('');
+    }
+
+    function renderQuestion(index) {
+      currentIndex = index;
+      const q = questions[index];
+      const selected = answers[q.id] || null;
+
+      document.getElementById('current-indicator').textContent = `Q ${index + 1} of ${questions.length}`;
+      document.getElementById('btn-prev').disabled = index === 0;
+      document.getElementById('btn-next').disabled = index === questions.length - 1;
+
+      // Update dots
+      document.querySelectorAll('.nav-dot').forEach((d, i) => {
+        d.classList.remove('current');
+        d.classList.toggle('answered', !!answers[questions[i].id]);
+      });
+      document.getElementById(`dot-${index}`).classList.add('current');
+
+      document.getElementById('question-container').innerHTML = `
+        <div class="question-card">
+          <div class="q-num">Question ${index + 1} of ${questions.length} · ${q.marks} mark${q.marks > 1 ? 's' : ''}</div>
+          <div class="q-text">${escHtml(q.question)}</div>
+          <ul class="options-list">
+            ${['A','B','C','D'].map(opt => {
+              const key = `option_${opt.toLowerCase()}`;
+              const val = q[key];
+              const isSelected = selected === opt;
+              return `<li class="option-item ${isSelected ? 'selected' : ''}" onclick="selectAnswer('${q.id}','${opt}',this)">
+                <input type="radio" name="q-${q.id}" value="${opt}" ${isSelected ? 'checked' : ''} />
+                <span><strong>${opt}.</strong> ${escHtml(val)}</span>
+              </li>`;
+            }).join('')}
+          </ul>
+        </div>`;
+
+      updateProgress();
+    }
+
+    function selectAnswer(qId, option, el) {
+      answers[qId] = option;
+
+      // Update UI
+      el.closest('.options-list').querySelectorAll('.option-item').forEach(li => {
+        li.classList.remove('selected');
+        li.querySelector('input').checked = false;
+      });
+      el.classList.add('selected');
+      el.querySelector('input').checked = true;
+
+      // Update dot
+      document.getElementById(`dot-${currentIndex}`).classList.add('answered');
+      updateProgress();
+    }
+
+    function navigate(dir) {
+      const next = currentIndex + dir;
+      if (next >= 0 && next < questions.length) renderQuestion(next);
+    }
+
+    function updateProgress() {
+      const answered = Object.keys(answers).length;
+      const total    = questions.length;
+      document.getElementById('answered-count').textContent = answered;
+      document.getElementById('progress-bar').style.width   = `${(answered / total) * 100}%`;
+    }
+
+    // ─── Submit ─────────────────────────────────────────────────────────────────
+    function confirmSubmit() {
+      const answered = Object.keys(answers).length;
+      const unanswered = questions.length - answered;
+      const msg = unanswered > 0
+        ? `You have ${unanswered} unanswered question(s). Submit anyway?`
+        : 'Submit the exam?';
+      if (confirm(msg)) submitExam();
+    }
+
+    async function submitExam() {
+      if (submitted) return;
+      submitted = true;
+      clearInterval(timerInterval);
+
+      const timeTaken = Math.round((Date.now() - examStartTime) / 1000);
+
+      try {
+        const result = await API.post('/results/submit', {
+          exam_id: parseInt(examId, 10),
+          answers,
+          time_taken_secs: timeTaken
+        });
+
+        // Redirect to result page
+        window.location.href = `/student/result.html?exam=${examId}&student=${user.id}&new=1`;
+      } catch (err) {
+        submitted = false;
+        showAlert('alert-box', 'danger', err.message || 'Submission failed. Please try again.');
+      }
+    }
+
+    // ─── Monitoring: Tab Switching ───────────────────────────────────────────────
+    function initMonitoring() {
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden && !submitted) {
+          tabSwitches++;
+          const bar = document.getElementById('monitor-bar');
+          bar.style.display = 'block';
+          bar.textContent   = `⚠ Warning: Tab switch detected (${tabSwitches} time${tabSwitches > 1 ? 's' : ''})! This has been logged.`;
+          setTimeout(() => { bar.style.display = 'none'; }, 4000);
+
+          logEvent('tab_switch', `Tab switched ${tabSwitches} time(s)`);
+        }
+      });
+
+      // Fullscreen exit detection
+      document.addEventListener('fullscreenchange', () => {
+        if (!document.fullscreenElement && !submitted && examData) {
+          logEvent('fullscreen_exit', 'Student exited fullscreen mode');
+        }
+      });
+
+      // Right-click disable
+      document.addEventListener('contextmenu', e => e.preventDefault());
+
+      // Copy/paste disable
+      document.addEventListener('copy',  e => e.preventDefault());
+      document.addEventListener('paste', e => e.preventDefault());
+    }
+
+    async function logEvent(type, desc) {
+      try {
+        await API.post('/monitoring/log', { exam_id: parseInt(examId, 10), event_type: type, description: desc });
+      } catch (_) { /* silent */ }
+    }
+
+    // ─── Webcam ─────────────────────────────────────────────────────────────────
+    async function initWebcam() {
+      const wrap = document.getElementById('webcam-wrap');
+      const vid  = document.getElementById('webcam-video');
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        vid.srcObject = stream;
+        wrap.style.display = 'block';
+      } catch (err) {
+        console.warn('Webcam unavailable:', err.name);
+        logEvent('webcam_denied', `Webcam access denied: ${err.name}`);
+        wrap.style.display = 'none';
+      }
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>My Results – AI Exam Portal</title>
+  <link rel="stylesheet" href="/assets/css/style.css" />
+</head>
+<body>
+  <nav class="navbar">
+    <span class="brand">🎓 AI Exam Portal</span>
+    <div class="nav-links">
+      <a href="/student/dashboard.html">Dashboard</a>
+      <a href="/student/history.html" class="active">My Results</a>
+    </div>
+    <div class="flex gap-1" style="align-items:center">
+      <span class="user-info" id="nav-user"></span>
+      <button class="btn btn-outline btn-sm" onclick="logout()" style="color:#fff;border-color:rgba(255,255,255,.4)">Logout</button>
+    </div>
+  </nav>
+
+  <div class="dashboard-layout">
+    <nav class="sidebar">
+      <a href="/student/dashboard.html"><span class="icon">🏠</span> Dashboard</a>
+      <a href="/student/history.html" class="active"><span class="icon">📋</span> My Results</a>
+      <a href="#" onclick="logout()"><span class="icon">🚪</span> Logout</a>
+    </nav>
+
+    <main class="main-content">
+      <h2 style="margin-bottom:1.25rem">My Exam History</h2>
+      <div id="alert-box"></div>
+
+      <div class="stats-row">
+        <div class="stat-card"><div class="stat-value" id="stat-total">–</div><div class="stat-label">Total Attempted</div></div>
+        <div class="stat-card"><div class="stat-value" id="stat-passed">–</div><div class="stat-label">Passed</div></div>
+        <div class="stat-card"><div class="stat-value" id="stat-failed">–</div><div class="stat-label">Failed</div></div>
+        <div class="stat-card"><div class="stat-value" id="stat-avg">–</div><div class="stat-label">Average %</div></div>
+      </div>
+
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>#</th><th>Exam</th><th>Subject</th><th>Score</th><th>Percentage</th><th>Status</th><th>Time Taken</th><th>Date</th><th>Review</th></tr>
+            </thead>
+            <tbody id="history-table"><tr><td colspan="9" class="text-muted text-center">Loading…</td></tr></tbody>
+          </table>
+        </div>
+        <div id="empty-msg" class="text-muted text-center mt-2 hidden">You haven't attempted any exams yet. <a href="/student/dashboard.html">Go take one!</a></div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/assets/js/api.js"></script>
+  <script>
+    const user = requireAuth('student');
+    if (user) { setNavUser(); loadHistory(); }
+
+    async function loadHistory() {
+      try {
+        const data    = await API.get('/results/my');
+        const results = data.results || [];
+
+        const total  = results.length;
+        const passed = results.filter(r => r.passed).length;
+        const avg    = total ? (results.reduce((s, r) => s + parseFloat(r.percentage), 0) / total).toFixed(1) : 0;
+
+        document.getElementById('stat-total').textContent  = total;
+        document.getElementById('stat-passed').textContent = passed;
+        document.getElementById('stat-failed').textContent = total - passed;
+        document.getElementById('stat-avg').textContent    = avg + '%';
+
+        const tbody = document.getElementById('history-table');
+        const empty = document.getElementById('empty-msg');
+
+        if (results.length === 0) {
+          tbody.innerHTML = '';
+          empty.classList.remove('hidden');
+          return;
+        }
+
+        empty.classList.add('hidden');
+        tbody.innerHTML = results.map((r, i) => `
+          <tr>
+            <td>${i + 1}</td>
+            <td><strong>${escHtml(r.title)}</strong></td>
+            <td>${escHtml(r.subject || '–')}</td>
+            <td>${r.score} / ${r.total_marks}</td>
+            <td>${r.percentage}%</td>
+            <td><span class="badge ${r.passed ? 'badge-success' : 'badge-danger'}">${r.passed ? 'Pass' : 'Fail'}</span></td>
+            <td>${formatDuration(r.time_taken_secs)}</td>
+            <td>${formatDate(r.submitted_at)}</td>
+            <td><a href="/student/result.html?exam=${r.exam_id}&student=${user.id}" class="btn btn-outline btn-sm">View</a></td>
+          </tr>`).join('');
+      } catch (err) {
+        showAlert('alert-box', 'danger', err.message);
+      }
+    }
+  </script>
+</body>
+</html>

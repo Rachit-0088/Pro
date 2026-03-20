@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Exam Result – AI Exam Portal</title>
+  <link rel="stylesheet" href="/assets/css/style.css" />
+  <style>
+    .answer-review { border-radius: var(--radius); padding: 1rem; margin-bottom: .75rem; border: 2px solid var(--border); }
+    .answer-review.correct { border-color: var(--success); background: #f0fdf4; }
+    .answer-review.wrong   { border-color: var(--danger);  background: #fef2f2; }
+    .answer-review .q-label { font-size: .75rem; color: var(--muted); margin-bottom: .25rem; }
+    .answer-review .q-text  { font-weight: 500; margin-bottom: .5rem; }
+    .answer-tags { display: flex; gap: .5rem; flex-wrap: wrap; font-size: .8rem; }
+  </style>
+</head>
+<body>
+  <nav class="navbar">
+    <span class="brand">🎓 AI Exam Portal</span>
+    <div class="nav-links">
+      <a href="/student/dashboard.html">Dashboard</a>
+      <a href="/student/history.html">My Results</a>
+    </div>
+    <div class="flex gap-1" style="align-items:center">
+      <span class="user-info" id="nav-user"></span>
+      <button class="btn btn-outline btn-sm" onclick="logout()" style="color:#fff;border-color:rgba(255,255,255,.4)">Logout</button>
+    </div>
+  </nav>
+
+  <div class="container" style="max-width:800px;padding:2rem 1.25rem">
+    <div id="alert-box"></div>
+
+    <!-- Score summary card -->
+    <div class="card text-center" id="result-summary" style="padding:2rem">
+      <div class="text-muted mb-1">Loading result…</div>
+    </div>
+
+    <!-- Per-question review -->
+    <div class="card" id="review-card" style="display:none">
+      <div class="card-header">
+        <h2>Answer Review</h2>
+        <p>Detailed breakdown of your answers</p>
+      </div>
+      <div id="review-container"></div>
+    </div>
+
+    <div class="flex gap-2 mt-2" style="justify-content:center">
+      <a href="/student/dashboard.html" class="btn btn-primary">Back to Dashboard</a>
+      <a href="/student/history.html"   class="btn btn-outline">View All Results</a>
+    </div>
+  </div>
+
+  <script src="/assets/js/api.js"></script>
+  <script>
+    const user   = requireAuth('student');
+    const params = new URLSearchParams(window.location.search);
+    const examId    = params.get('exam');
+    const studentId = params.get('student') || (user ? user.id : null);
+    const isNew     = params.get('new') === '1';
+
+    if (user) { setNavUser(); }
+
+    if (!examId || !studentId) {
+      window.location.href = '/student/dashboard.html';
+    } else {
+      loadResult();
+    }
+
+    async function loadResult() {
+      try {
+        const data = await API.get(`/results/${examId}/${studentId}`);
+        const { result, questions, answersMap } = data;
+
+        const pct    = parseFloat(result.percentage);
+        const passed = result.passed;
+        const color  = passed ? 'var(--success)' : 'var(--danger)';
+
+        document.getElementById('result-summary').innerHTML = `
+          ${isNew ? '<div class="alert alert-success" style="margin-bottom:1rem">✅ Exam submitted successfully!</div>' : ''}
+          <div class="score-circle" style="--pct:${pct * 3.6}deg; background: conic-gradient(${color} ${pct * 3.6}deg, #e2e8f0 0deg)">
+            <div class="score-num" style="color:${color}">${result.score}</div>
+            <div class="score-pct">/ ${result.total_marks}</div>
+          </div>
+          <h2 style="font-size:1.5rem;margin-bottom:.5rem">${pct}%</h2>
+          <span class="badge ${passed ? 'badge-success' : 'badge-danger'}" style="font-size:1rem;padding:.4rem 1.25rem">
+            ${passed ? '🎉 PASSED' : '❌ FAILED'}
+          </span>
+          <div class="mt-2" style="display:flex;justify-content:center;gap:1.5rem;flex-wrap:wrap">
+            <div><div style="font-size:1.3rem;font-weight:700">${result.score}/${result.total_marks}</div><div class="text-muted" style="font-size:.8rem">Score</div></div>
+            <div><div style="font-size:1.3rem;font-weight:700">${formatDuration(result.time_taken_secs)}</div><div class="text-muted" style="font-size:.8rem">Time Taken</div></div>
+            <div><div style="font-size:1.3rem;font-weight:700">${questions.length}</div><div class="text-muted" style="font-size:.8rem">Questions</div></div>
+          </div>
+          <div class="text-muted mt-2" style="font-size:.85rem">Submitted: ${formatDate(result.submitted_at)}</div>`;
+
+        // Build review
+        if (questions && questions.length > 0) {
+          document.getElementById('review-card').style.display = '';
+          document.getElementById('review-container').innerHTML = questions.map((q, i) => {
+            const ans     = answersMap ? answersMap[q.id] : null;
+            const given   = ans ? ans.given   : '–';
+            const correct = ans ? ans.correct  : q.correct_ans;
+            const isOk    = ans ? ans.isCorrect : false;
+            const givenText = getOptionText(q, given);
+            const correctText = getOptionText(q, correct);
+
+            return `
+            <div class="answer-review ${isOk ? 'correct' : 'wrong'}">
+              <div class="q-label">Question ${i + 1} · ${q.marks} mark${q.marks > 1 ? 's' : ''} · ${isOk ? '✅ Correct' : '❌ Incorrect'}</div>
+              <div class="q-text">${escHtml(q.question)}</div>
+              <div class="answer-tags">
+                <span class="badge ${isOk ? 'badge-success' : 'badge-danger'}">Your answer: ${given} – ${escHtml(givenText || '(not answered)')}</span>
+                ${!isOk ? `<span class="badge badge-success">Correct: ${correct} – ${escHtml(correctText)}</span>` : ''}
+              </div>
+            </div>`;
+          }).join('');
+        }
+
+      } catch (err) {
+        showAlert('alert-box', 'danger', 'Could not load result: ' + err.message);
+      }
+    }
+
+    function getOptionText(q, opt) {
+      const map = { A: q.option_a, B: q.option_b, C: q.option_c, D: q.option_d };
+      return map[opt] || '';
+    }
+  </script>
+</body>
+</html>
