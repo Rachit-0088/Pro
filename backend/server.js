@@ -2,11 +2,12 @@
 
 require('dotenv').config();
 
-const express     = require('express');
-const cors        = require('cors');
-const helmet      = require('helmet');
-const rateLimit   = require('express-rate-limit');
-const path        = require('path');
+const express  = require('express');
+const cors     = require('cors');
+const helmet   = require('helmet');
+const path     = require('path');
+
+const { apiLimiter } = require('./middleware/rateLimiter');
 
 const authRoutes       = require('./routes/auth');
 const examRoutes       = require('./routes/exams');
@@ -20,7 +21,19 @@ const PORT = process.env.PORT || 3000;
 
 // ─── Security Middleware ────────────────────────────────────────────────────
 app.use(helmet({
-  contentSecurityPolicy: false,  // relaxed for inline JS in frontend
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc:  ["'self'", "'unsafe-inline'"],
+      styleSrc:   ["'self'", "'unsafe-inline'"],
+      imgSrc:     ["'self'", "data:", "blob:"],
+      mediaSrc:   ["'self'", "blob:"],
+      connectSrc: ["'self'"],
+      fontSrc:    ["'self'"],
+      objectSrc:  ["'none'"],
+      frameAncestors: ["'none'"],
+    },
+  },
 }));
 
 app.use(cors({
@@ -29,25 +42,6 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { success: false, message: 'Too many requests, please try again later.' },
-});
-app.use('/api/', limiter);
-
-// Auth endpoints: stricter limit
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  message: { success: false, message: 'Too many auth attempts, please try again later.' },
-});
-app.use('/api/auth/login',    authLimiter);
-app.use('/api/auth/register', authLimiter);
-
 // ─── Body Parsers ───────────────────────────────────────────────────────────
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
@@ -55,7 +49,7 @@ app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 // ─── Static Frontend ────────────────────────────────────────────────────────
 app.use(express.static(path.join(__dirname, '..', 'frontend')));
 
-// ─── API Routes ─────────────────────────────────────────────────────────────
+// ─── API Routes (rate limiting applied per-router) ───────────────────────────
 app.use('/api/auth',       authRoutes);
 app.use('/api/exams',      examRoutes);
 app.use('/api/questions',  questionRoutes);
@@ -64,12 +58,12 @@ app.use('/api/monitoring', monitoringRoutes);
 app.use('/api/users',      userRoutes);
 
 // ─── Health Check ───────────────────────────────────────────────────────────
-app.get('/api/health', (_req, res) => {
+app.get('/api/health', apiLimiter, (_req, res) => {
   res.json({ success: true, message: 'AI Examination Portal API is running.' });
 });
 
-// ─── Catch-all: serve frontend ───────────────────────────────────────────────
-app.get('*', (_req, res) => {
+// ─── Catch-all: serve frontend (rate-limited) ────────────────────────────────
+app.get('*', apiLimiter, (_req, res) => {
   res.sendFile(path.join(__dirname, '..', 'frontend', 'index.html'));
 });
 

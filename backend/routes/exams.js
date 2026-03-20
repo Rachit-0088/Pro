@@ -4,8 +4,10 @@ const express  = require('express');
 const db       = require('../config/db');
 const { authenticate } = require('../middleware/auth');
 const { requireRole }  = require('../middleware/roleCheck');
+const { apiLimiter }   = require('../middleware/rateLimiter');
 
 const router = express.Router();
+router.use(apiLimiter);
 router.use(authenticate);
 
 // ---------------------------------------------------------------------------

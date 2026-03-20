@@ -4,14 +4,18 @@ const express  = require('express');
 const bcrypt   = require('bcryptjs');
 const jwt      = require('jsonwebtoken');
 const db       = require('../config/db');
-const { authenticate } = require('../middleware/auth');
+const { authenticate }   = require('../middleware/auth');
+const { authLimiter, apiLimiter } = require('../middleware/rateLimiter');
 
 const router = express.Router();
+
+// Apply rate limiting to this router
+router.use(apiLimiter);
 
 // ---------------------------------------------------------------------------
 // POST /api/auth/register  (student self-registration)
 // ---------------------------------------------------------------------------
-router.post('/register', async (req, res) => {
+router.post('/register', authLimiter, async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
@@ -43,7 +47,7 @@ router.post('/register', async (req, res) => {
 // ---------------------------------------------------------------------------
 // POST /api/auth/login
 // ---------------------------------------------------------------------------
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
 
