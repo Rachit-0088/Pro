@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Student Dashboard – AI Exam Portal</title>
+  <link rel="stylesheet" href="/assets/css/style.css" />
+</head>
+<body>
+  <nav class="navbar">
+    <span class="brand">🎓 AI Exam Portal</span>
+    <div class="nav-links">
+      <a href="/student/dashboard.html" class="active">Dashboard</a>
+      <a href="/student/history.html">My Results</a>
+    </div>
+    <div class="flex gap-1" style="align-items:center">
+      <span class="user-info" id="nav-user"></span>
+      <button class="btn btn-outline btn-sm" onclick="logout()" style="color:#fff;border-color:rgba(255,255,255,.4)">Logout</button>
+    </div>
+  </nav>
+
+  <div class="dashboard-layout">
+    <nav class="sidebar">
+      <a href="/student/dashboard.html" class="active"><span class="icon">🏠</span> Dashboard</a>
+      <a href="/student/history.html"><span class="icon">📋</span> My Results</a>
+      <a href="#" onclick="logout()"><span class="icon">🚪</span> Logout</a>
+    </nav>
+
+    <main class="main-content">
+      <h2 style="margin-bottom:1.25rem">Hello, <span id="student-name"></span>!</h2>
+
+      <div class="stats-row">
+        <div class="stat-card"><div class="stat-value" id="stat-available">–</div><div class="stat-label">Available Exams</div></div>
+        <div class="stat-card"><div class="stat-value" id="stat-attempted">–</div><div class="stat-label">Attempted</div></div>
+        <div class="stat-card"><div class="stat-value" id="stat-passed">–</div><div class="stat-label">Passed</div></div>
+        <div class="stat-card"><div class="stat-value" id="stat-avg">–</div><div class="stat-label">Avg Score %</div></div>
+      </div>
+
+      <div id="alert-box"></div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>Available Exams</h2>
+          <p>Exams you can attempt now or upcoming exams</p>
+        </div>
+        <div id="exams-list"></div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/assets/js/api.js"></script>
+  <script>
+    const user = requireAuth('student');
+    if (user) {
+      document.getElementById('student-name').textContent = user.name;
+      setNavUser();
+      loadData();
+    }
+
+    async function loadData() {
+      try {
+        const [examData, histData] = await Promise.all([
+          API.get('/exams'),
+          API.get('/results/my')
+        ]);
+
+        const exams   = examData.exams   || [];
+        const results = histData.results || [];
+
+        const available = exams.filter(e => !e.attempted);
+        const attempted = results.length;
+        const passed    = results.filter(r => r.passed).length;
+        const avgPct    = attempted ? (results.reduce((s, r) => s + parseFloat(r.percentage), 0) / attempted).toFixed(1) : 0;
+
+        document.getElementById('stat-available').textContent = available.length;
+        document.getElementById('stat-attempted').textContent = attempted;
+        document.getElementById('stat-passed').textContent    = passed;
+        document.getElementById('stat-avg').textContent       = avgPct + '%';
+
+        const container = document.getElementById('exams-list');
+        if (exams.length === 0) {
+          container.innerHTML = '<p class="text-muted">No exams available right now.</p>'; return;
+        }
+
+        container.innerHTML = exams.map(e => {
+          const now       = new Date();
+          const scheduled = new Date(e.scheduled_at);
+          const isUpcoming = scheduled > now;
+          const isDone    = !!e.attempted;
+
+          let statusBadge = '';
+          let actionBtn   = '';
+
+          if (isDone) {
+            statusBadge = '<span class="badge badge-muted">Attempted</span>';
+            actionBtn   = `<a href="/student/result.html?exam=${e.id}&student=${user.id}" class="btn btn-outline btn-sm">View Result</a>`;
+          } else if (isUpcoming) {
+            statusBadge = '<span class="badge badge-info">Upcoming</span>';
+            actionBtn   = `<button class="btn btn-outline btn-sm" disabled>Not yet started</button>`;
+          } else {
+            statusBadge = '<span class="badge badge-success">Available</span>';
+            actionBtn   = `<a href="/student/exam.html?id=${e.id}" class="btn btn-primary btn-sm">Start Exam</a>`;
+          }
+
+          return `
+          <div style="padding:1rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem">
+            <div>
+              <div style="font-weight:600;font-size:1rem">${escHtml(e.title)}</div>
+              <div class="text-muted" style="font-size:.85rem">${escHtml(e.subject || '')} ${e.subject && e.duration_mins ? '·' : ''} ${e.duration_mins} min · ${e.total_marks} marks</div>
+              <div class="text-muted" style="font-size:.8rem">📅 ${formatDate(e.scheduled_at)} · By ${escHtml(e.created_by_name)}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:.5rem">${statusBadge} ${actionBtn}</div>
+          </div>`;
+        }).join('');
+      } catch (err) {
+        showAlert('alert-box', 'danger', err.message);
+      }
+    }
+  </script>
+</body>
+</html>

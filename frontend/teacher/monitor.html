@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Monitor Activity – AI Exam Portal</title>
+  <link rel="stylesheet" href="/assets/css/style.css" />
+</head>
+<body>
+  <nav class="navbar">
+    <span class="brand">🎓 AI Exam Portal</span>
+    <div class="nav-links">
+      <a href="/teacher/dashboard.html">Dashboard</a>
+      <a href="/teacher/exams.html">Exams</a>
+      <a href="/teacher/students.html">Students</a>
+      <a href="/teacher/results.html">Results</a>
+      <a href="/teacher/monitor.html" class="active">Monitor</a>
+    </div>
+    <div class="flex gap-1" style="align-items:center">
+      <span class="user-info" id="nav-user"></span>
+      <button class="btn btn-outline btn-sm" onclick="logout()" style="color:#fff;border-color:rgba(255,255,255,.4)">Logout</button>
+    </div>
+  </nav>
+  <div class="dashboard-layout">
+    <nav class="sidebar">
+      <a href="/teacher/dashboard.html"><span class="icon">📊</span> Dashboard</a>
+      <a href="/teacher/exams.html"><span class="icon">📝</span> Manage Exams</a>
+      <a href="/teacher/students.html"><span class="icon">👥</span> Students</a>
+      <a href="/teacher/results.html"><span class="icon">📈</span> Results</a>
+      <a href="/teacher/monitor.html" class="active"><span class="icon">👁</span> Monitor</a>
+      <a href="#" onclick="logout()"><span class="icon">🚪</span> Logout</a>
+    </nav>
+    <main class="main-content">
+      <h2 style="margin-bottom:1rem">Activity Monitor</h2>
+      <div id="alert-box"></div>
+      <div class="card" style="margin-bottom:1rem">
+        <div class="flex gap-2" style="align-items:flex-end;flex-wrap:wrap">
+          <div class="form-group" style="flex:1;min-width:200px;margin:0">
+            <label>Select Exam</label>
+            <select id="exam-select" class="form-control" onchange="loadMonitoring()">
+              <option value="">– Choose an exam –</option>
+            </select>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="loadMonitoring()">🔄 Refresh</button>
+        </div>
+      </div>
+
+      <div id="monitor-section" class="hidden">
+        <div class="card" style="margin-bottom:1rem">
+          <div class="card-header"><h2>Suspicious Activity Summary</h2></div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Student</th><th>Email</th><th>Total Events</th><th>Tab Switches</th><th>Webcam Denied</th><th>Fullscreen Exit</th><th>Risk</th></tr>
+              </thead>
+              <tbody id="summary-table"><tr><td colspan="7" class="text-muted text-center">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h2>Detailed Event Log</h2></div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Time</th><th>Student</th><th>Event</th><th>Details</th></tr>
+              </thead>
+              <tbody id="logs-table"><tr><td colspan="4" class="text-muted text-center">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <script src="/assets/js/api.js"></script>
+  <script>
+    const user = requireAuth('teacher');
+    if (user) { setNavUser(); loadExams(); }
+
+    async function loadExams() {
+      try {
+        const data = await API.get('/exams');
+        const sel  = document.getElementById('exam-select');
+        (data.exams || []).forEach(e => {
+          const opt = document.createElement('option');
+          opt.value = e.id; opt.textContent = e.title;
+          sel.appendChild(opt);
+        });
+      } catch (err) { showAlert('alert-box', 'danger', err.message); }
+    }
+
+    async function loadMonitoring() {
+      const examId = document.getElementById('exam-select').value;
+      if (!examId) { document.getElementById('monitor-section').classList.add('hidden'); return; }
+      document.getElementById('monitor-section').classList.remove('hidden');
+
+      try {
+        const [sumData, logData] = await Promise.all([
+          API.get(`/monitoring/summary/${examId}`),
+          API.get(`/monitoring/${examId}`)
+        ]);
+
+        const summary = sumData.summary || [];
+        document.getElementById('summary-table').innerHTML = summary.length === 0
+          ? '<tr><td colspan="7" class="text-muted text-center">No suspicious activity recorded.</td></tr>'
+          : summary.map(s => {
+              const risk = s.total_events >= 10 ? 'badge-danger' : s.total_events >= 5 ? 'badge-warning' : 'badge-success';
+              const label = s.total_events >= 10 ? 'High' : s.total_events >= 5 ? 'Medium' : 'Low';
+              return `<tr>
+                <td>${escHtml(s.name)}</td><td>${escHtml(s.email)}</td>
+                <td>${s.total_events}</td><td>${s.tab_switches || 0}</td>
+                <td>${s.webcam_denied || 0}</td><td>${s.fullscreen_exits || 0}</td>
+                <td><span class="badge ${risk}">${label}</span></td>
+              </tr>`;
+            }).join('');
+
+        const logs = logData.logs || [];
+        document.getElementById('logs-table').innerHTML = logs.length === 0
+          ? '<tr><td colspan="4" class="text-muted text-center">No events logged.</td></tr>'
+          : logs.map(l => `
+            <tr>
+              <td>${formatDate(l.logged_at)}</td>
+              <td>${escHtml(l.student_name)}</td>
+              <td><span class="badge badge-warning">${escHtml(l.event_type)}</span></td>
+              <td>${escHtml(l.description || '–')}</td>
+            </tr>`).join('');
+      } catch (err) { showAlert('alert-box', 'danger', err.message); }
+    }
+  </script>
+</body>
+</html>
